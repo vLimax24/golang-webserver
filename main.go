@@ -5,11 +5,8 @@ import (
 	"net/http"
 )
 
-func helloHandler(w http.ResponseWriter, r *http.Request) {
-    fmt.Fprintf(w, "Hello! You are on path - %s", r.URL.Path[1:])
-}
-
 func main() {
-	http.HandleFunc("/", helloHandler)
-	http.ListenAndServe(":8080", nil)
+	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
+    fmt.Println("Serving static files on :8080...")
+    http.ListenAndServe(":8080", nil)
 }
