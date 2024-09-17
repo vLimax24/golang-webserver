@@ -41,6 +41,7 @@ func createUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
+	db.Create(&user)
 	user.ID = idCounter
 	users[idCounter] = user
 	idCounter++
@@ -49,8 +50,8 @@ func createUser(w http.ResponseWriter, r *http.Request) {
 
 func getUser(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.Atoi(chi.URLParam(r, "id"))
-	user, ok := users[id]
-	if !ok {
+	var user User
+	if db.First(&user, id).Error != nil {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
