@@ -1,10 +1,16 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"strconv"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -25,8 +31,6 @@ func initDB() {
 	db.AutoMigrate(&User{})
 }
 
-
-
 type User struct {
 	ID int `json:"id"`
 	Name string `json:"name"`
@@ -36,12 +40,33 @@ var users = map[int]User{}
 var idCounter = 1
 
 func createUser(w http.ResponseWriter, r *http.Request) {
+	if db == nil {
+        http.Error(w, "Database not initialized", http.StatusInternalServerError)
+        return
+    }
+
 	var user User
 	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
-	db.Create(&user)
+
+	result := db.Create(&user)
+	if result.Error != nil {
+		// Log the error
+		log.Printf("Error creating user: %v", result.Error)
+		
+		// Check for unique constraint violation
+		if strings.Contains(result.Error.Error(), "UNIQUE constraint failed") {
+			http.Error(w, "User already exists", http.StatusConflict)
+			return
+		}
+		
+		// Handle other errors
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
 	user.ID = idCounter
 	users[idCounter] = user
 	idCounter++
@@ -113,6 +138,26 @@ func main() {
 		go worker()
 	}
 
-	fmt.Println("Server starting on :8080...")
-	http.ListenAndServe(":8080", r)
+	srv := &http.Server{
+		Addr: ":8080",
+		Handler: r,
+	}
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Printf("listen: %s \n", err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<- quit
+	fmt.Println("Shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5 *time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil{
+		fmt.Println("Server forced to shutdown:", err)
+	}
 }
